@@ -1,0 +1,4 @@
+name: UDPCraft
+main: net.jaseg.udpcraft.UDPCraftPlugin
+version: 0.1.0
+commands:
