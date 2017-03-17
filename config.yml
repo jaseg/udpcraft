@@ -3,7 +3,7 @@ server:
     host: localhost
 
 target:
-	port: 6130
-	host: localhost
+    port: 6130
+    host: localhost
 
 maxLifetimeSeconds: 300
