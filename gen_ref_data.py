@@ -5,7 +5,6 @@ import hashlib
 import struct
 
 testdata = b'this is only a test'
-testname = b'testportal'
 testkey = b'foobar'
 testserial = 1
 
@@ -18,7 +17,7 @@ def javadump(bs, blocksize=16):
         lines.append(', '.join('{: 4}'.format(((bs[j]+128)%256)-128) for j in range(i, i+blocksize) if j<len(bs)))
     print(',\n'.join(lines))
 
-message = bytes([len(testname)]) + testname + signature + testpayload
+message = signature + testpayload
 
 print('message:', message)
 print('payload length:', len(testpayload))

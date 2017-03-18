@@ -10,9 +10,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.logging.Level;
@@ -26,7 +24,6 @@ public class TCPPlaintextServer implements Runnable, ItemListener {
 	private UDPCraftPlugin plugin;
 	private Thread listener;
 	private InetSocketAddress addr;
-	private Map<Portal, Queue<Connection>> portalConns = new HashMap<Portal, Queue<Connection>>();
 	private Selector selector;
 	private boolean exitListener = false;
 	
@@ -45,31 +42,6 @@ public class TCPPlaintextServer implements Runnable, ItemListener {
 	}
 	
 	public void emitMessage(Portal portal, ItemMessage msg) {
-		plugin.getLogger().log(Level.INFO, "Handling message TCP transportation for "+portal.getName());
-		if (portalConns.containsKey(portal)) {
-			plugin.getLogger().log(Level.INFO, "Handling message TCP transport on connection");
-			portal.ackMessage(msg);
-			for (Connection conn : portalConns.get(portal)) {
-				plugin.getLogger().log(Level.INFO, conn.toString());
-				conn.enqueueMessage(msg);
-			}
-			selector.wakeup();
-		} else {
-			plugin.getLogger().log(Level.INFO, "No handlers found");
-		}
-	}
-	
-	private synchronized void registerPortalConn(Portal portal, Connection conn) {
-		if (!portalConns.containsKey(portal))
-			portalConns.put(portal, new LinkedList<Connection>());
-		portalConns.get(portal).add(conn);
-	}
-	
-	private synchronized void unregisterPortalConn(Portal portal, Connection conn) {
-		Queue<Connection> queue = portalConns.get(portal);
-		queue.remove(conn);
-		if (queue.isEmpty())
-			portalConns.remove(portal);
 	}
 	
 	public static class Connection {

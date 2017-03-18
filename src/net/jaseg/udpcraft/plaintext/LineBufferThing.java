@@ -1,3 +1,5 @@
+package net.jaseg.udpcraft.plaintext;
+
 import java.io.*;
 import java.nio.*;
 

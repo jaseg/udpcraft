@@ -3,11 +3,9 @@ package net.jaseg.udpcraft;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.net.InetAddress;
-import java.net.SocketException;
+import java.net.InetSocketAddress;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
@@ -20,17 +18,17 @@ import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import net.jaseg.udpcraft.plaintext.TCPPlaintextServer;
+import net.jaseg.udpcraft.plaintext.Server;
 
 
-public class UDPCraftPlugin extends JavaPlugin {
-	private TCPPlaintextServer server;
-	private HashMap<String, Portal> listeners = new HashMap<String, Portal>();
-	private HashMap<Location, Portal> rlisteners = new HashMap<Location, Portal>();
+public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, SignatureDataStore {
+	private HashMap<String, Portal> portals = new HashMap<String, Portal>();
 	private KeyParameter secret;
 	private int maxLifetimeSeconds;
 	private int currentSerial;
 	private Map<Integer, Long> activeSerials = new HashMap<Integer, Long>();
+	private ConnectionMux mux = new ConnectionMux(getLogger(), this, this);
+	private Server server;
 	
 	@Override
 	public void onEnable() {
@@ -38,18 +36,16 @@ public class UDPCraftPlugin extends JavaPlugin {
 		getConfig().options().copyDefaults(true);
 		saveConfig();
 		try {
-			server = new TCPPlaintextServer(this,
-					getConfig().getInt("server.port"),
-					InetAddress.getByName(getConfig().getString("server.host")));
-		} catch(SocketException ex) {
-			getLogger().log(Level.SEVERE, "Error creating listening socket", ex);
-			return;
-		} catch(UnknownHostException ex) {
+			server = new Server(getLogger(),
+					InetSocketAddress.createUnresolved(getConfig().getString("server.host"), getConfig().getInt("server.port")),
+					getServer().getName(),
+					mux);
+		} catch(IOException ex) {
 			getLogger().log(Level.SEVERE, "Error creating listening socket", ex);
 			return;
 		}
 		
-		ConfigurationSection section = getConfig().getConfigurationSection("listeners");
+		ConfigurationSection section = getConfig().getConfigurationSection("portals");
 		if (section != null) {
 			Map<String, Object> map = section.getValues(false);
 			for (Map.Entry<String, Object> e : map.entrySet()) {
@@ -62,7 +58,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 			}
 		} else {
 			getLogger().log(Level.WARNING, "Portal list not found. ");
-			saveListeners();
+			savePortals();
 		}
 		
 		if (!getConfig().isSet("secret")) {
@@ -78,7 +74,9 @@ public class UDPCraftPlugin extends JavaPlugin {
 		
 		maxLifetimeSeconds = getConfig().getInt("maxLifetimeSeconds");
 		currentSerial = getConfig().getInt("currentSerial", 0);
-		getServer().getPluginManager().registerEvents(new ChestListener(this), this);
+		getServer().getPluginManager().registerEvents(new ChestListener(getLogger(), this), this);
+		
+		server.start();
 		
 		getLogger().log(Level.INFO, "UDPCraft loaded successfully");
 	}
@@ -87,7 +85,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 	public void onDisable() {
 		getLogger().log(Level.INFO, "Disabling UDPCraft");
 		if (server != null)
-			server.close();
+			server.stop();
 	}
 	
 	public void jarLoadingHack() {
@@ -131,6 +129,7 @@ public class UDPCraftPlugin extends JavaPlugin {
         }
     }
 	
+    /* Signature handling */
 	public KeyParameter getSecret() {
 		return secret;
 	}
@@ -154,8 +153,9 @@ public class UDPCraftPlugin extends JavaPlugin {
 		return true;
 	}
 	
-	boolean tryRegisterPortal(Location location) {
-		Portal portal = Portal.fromLocation(this, location, server);
+	/* Portal index */
+	public boolean tryRegisterPortal(Location location) {
+		Portal portal = Portal.fromLocation(this, location, mux);
 		getLogger().log(Level.INFO, "Checking out potential portal location "+location.toString());
 		if (portal == null)
 			return false;
@@ -163,34 +163,32 @@ public class UDPCraftPlugin extends JavaPlugin {
 		return true;
 	}
 	
-	private void registerPortal(Portal portal) {
+	public void registerPortal(Portal portal) {
 		getLogger().log(Level.INFO, "Registering portal at location "+portal.getLocation().toString());
-		listeners.put(portal.getName(), portal);
-		rlisteners.put(portal.getLocation(), portal);
-		saveListeners();
+		portals.put(portal.getName(), portal);
+		savePortals();
 	}
 	
-	private void saveListeners() {
-		getConfig().createSection("listeners", listeners);
+	public void savePortals() {
+		getConfig().createSection("portals", portals);
 		saveConfig();
 	}
 
 	public void unregisterPortal(Portal portal) {
-		rlisteners.remove(portal.getLocation());
-		listeners.remove(portal.getName());
-		saveListeners();
-	}
-	
-	public boolean routeIncomingMessage(ItemMessage msg) {
-		getLogger().log(Level.INFO, "Routing message to", msg.portalName());
-		if (!listeners.containsKey(msg.portalName()))
-			return false;
-		listeners.get(msg.portalName()).receiveMessage(msg);
-		return true;
+		portals.remove(portal.getName());
+		savePortals();
 	}
 	
 	public Portal lookupPortal(String name) {
-		return listeners.getOrDefault(name, null);
+		return portals.getOrDefault(name, null);
+	}
+	
+	public Portal lookupPortalOrDie(String name) throws IllegalArgumentException {
+		if (!Portal.checkPortalName(name))
+			throw new IllegalArgumentException("Invalid portal name \""+name+"\"");
+		if (!portals.containsKey(name))
+			throw new IllegalArgumentException("Portal \""+name+"\" does not exist");
+		return portals.get(name);
 	}
 	
 	/* Periodically re-check portals and re-save config

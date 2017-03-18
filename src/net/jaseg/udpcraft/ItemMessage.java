@@ -1,12 +1,11 @@
 package net.jaseg.udpcraft;
 
 import java.nio.ByteBuffer;
-import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.bouncycastle.crypto.digests.SHA256Digest;
 import org.bouncycastle.crypto.macs.HMac;
 import org.bouncycastle.util.Arrays;
-import org.bukkit.Material;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -17,19 +16,16 @@ public class ItemMessage {
 	
 	private ItemStack stack;
 	private String portalName;
+	private byte[] serialized;
 	
-	private UDPCraftPlugin plugin;
+	private SignatureDataStore sigdata;
 	
-	public ItemMessage(UDPCraftPlugin plugin, String portalName, ItemStack stack) {
-		this.plugin = plugin;
+	public ItemMessage(SignatureDataStore sigdata, String portalName, ItemStack stack) {
+		this.sigdata = sigdata;
 		this.stack = stack;
 		this.portalName = portalName;
 	}
-	
-	public ItemMessage(UDPCraftPlugin plugin) {
-		this.plugin = plugin;
-	}
-	
+
 	public ItemStack getStack() {
 		return stack;
 	}
@@ -44,60 +40,38 @@ public class ItemMessage {
 		return fconfig.saveToString().getBytes();
 	}
 	
-	public byte[] serialize() {
+	public synchronized byte[] serialize() {
 		/* This is a bit improvised. Please excuse me. */
-		return sign(serializeStack());
+		if (serialized == null)
+			serialized = sign(sigdata, serializeStack());
+		return serialized;
 	}
 	
-	public byte[] sign(byte[] cbytes) {
-		if (cbytes.length > Integer.MAX_VALUE/2) {
-			plugin.getLogger().log(Level.SEVERE, "Got item stack serializing to more than INT_MAX/2 bytes:", cbytes.length);
-			throw new IllegalArgumentException();
-		}
+	public static byte[] sign(SignatureDataStore sigdata, byte[] cbytes) {
+		if (cbytes.length > Integer.MAX_VALUE/2)
+			throw new IllegalArgumentException("Got item stack serializing to "+cbytes.length+" > INT_MAX/2 bytes");
 		
 		int innerLen = cbytes.length + 4;
-		ByteBuffer inner = ByteBuffer.allocate(innerLen);
-		inner.putInt(plugin.nextSerial());
-		inner.put(cbytes);
-		inner.rewind();
+		int outerLen = MAC_LENGTH/8 + innerLen;
+		ByteBuffer buf = ByteBuffer.allocate(outerLen);
+		buf.position(MAC_LENGTH/8);
+		buf.putInt(sigdata.nextSerial());
+		buf.put(cbytes);
 		
-		byte macbytes[] = new byte[MAC_LENGTH/8];
 		HMac hmac = new HMac(new SHA256Digest());
-		hmac.init(plugin.getSecret());
-		hmac.update(inner.array(), 0, innerLen);
-		hmac.doFinal(macbytes, 0);
+		hmac.init(sigdata.getSecret());
+		hmac.update(buf.array(), MAC_LENGTH/8, innerLen);
+		hmac.doFinal(buf.array(), 0);
 
-		byte nameBytes[] = portalName.getBytes();
-		int length = 1 + nameBytes.length + macbytes.length + innerLen;
-		byte out[] = new byte[length];
-		ByteBuffer outer = ByteBuffer.wrap(out);
-		outer.put((byte)nameBytes.length);
-		outer.put(nameBytes);
-		outer.put(macbytes);
-		outer.put(inner);
-		return out;
+		return buf.array();
 	}
 	
-	public static ItemMessage deserialize(UDPCraftPlugin plugin, byte data[]) throws IllegalArgumentException {
-		ItemMessage msg = new ItemMessage(plugin);
-		msg.deserializeFrom(data);
-		return msg;
+	public static ItemMessage deserialize(Logger logger, SignatureDataStore sigdata, byte data[]) throws IllegalArgumentException {
+		return new ItemMessage(sigdata, null, unwrapItemStack(unsign(sigdata, data)));
 	}
 	
-	public void deserializeFrom(byte data[]) throws IllegalArgumentException{
-		byte payload[] = unsign(data);
-		this.stack = unwrapItemStack(plugin, payload);
-	}
-	
-	public byte[] unsign(byte []in) throws IllegalArgumentException{
+	public static byte[] unsign(SignatureDataStore plugin, byte []in) throws IllegalArgumentException{
 		ByteBuffer buf = ByteBuffer.wrap(in);
-		int nameLen = buf.get();
-		portalName = new String(buf.array(), buf.position(), nameLen);
-		
-		if (!Portal.checkPortalName(portalName))
-			throw new IllegalArgumentException("Invalid portal name");
-		
-		buf.position(buf.position() + nameLen);
 		
 		byte macbytes_ref[] = new byte[MAC_LENGTH/8];
 		buf.get(macbytes_ref);
@@ -120,16 +94,14 @@ public class ItemMessage {
 		return out;
 	}
 	
-	public static ItemStack unwrapItemStack(UDPCraftPlugin plugin, byte data[]) throws IllegalArgumentException{
+	public static ItemStack unwrapItemStack(byte data[]) throws IllegalArgumentException{
 		FileConfiguration fconfig = new YamlConfiguration();
 		String cstring = new String(data);
 		try {
 			fconfig.loadFromString(cstring);
 		} catch (InvalidConfigurationException ex) {
-			plugin.getLogger().log(Level.SEVERE, "Cannot parse signed configuration. This is likely a bug.", ex);
-			return new ItemStack(Material.OBSIDIAN, 1);
+			throw new IllegalArgumentException("Interrnal error");
 		}
-		
 		return fconfig.getItemStack("item");
 	}
 }

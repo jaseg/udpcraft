@@ -1,11 +1,18 @@
-import java.io.*;
-import java.nio.*;
-import java.net.*;
-import java.nio.channels.*;
-import java.nio.charset.*;
-import java.util.*;
+package net.jaseg.udpcraft.plaintext;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.BufferOverflowException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import net.jaseg.udpcraft.PubSubHandler;
 
 public class Server implements Runnable {
 
@@ -13,14 +20,15 @@ public class Server implements Runnable {
 
 	private ServerSocketChannel sch;
 	private Selector sel;
-
-	private HashMap<SocketChannel, LineBufferThing> map = new HashMap<SocketChannel, LineBufferThing>();
+	private boolean shouldStop = false;
+	private Thread runner;
 
 	private Logger logger;
 	private String name;
-	private boolean shouldStop = false;
+	private PubSubHandler pubsub;
+	
 
-	public Server(Logger logger, InetSocketAddress addr, String name) throws IOException {
+	public Server(Logger logger, InetSocketAddress addr, String name, PubSubHandler pubsub) throws IOException {
 		sel = Selector.open();
 		sch = ServerSocketChannel.open();
 		sch.configureBlocking(false);
@@ -29,17 +37,22 @@ public class Server implements Runnable {
 
 		this.logger = logger;
 		this.name = name;
+		this.pubsub = pubsub;
+		runner = new Thread(this);
 	}
 	
-	public void interrupt() {
+	public void start() {
+		runner.start();
+	}
+	
+	public void stop() {
 		shouldStop = true;
 		sel.wakeup();
 	}
 
 	public void run() {
 		ByteBuffer fnord = ByteBuffer.allocate(MAX_LINE_LEN);
-		CharBuffer foo = fnord.asCharBuffer();
-		while (true) {
+		while (!shouldStop) {
 			try { 
 				sel.select();
 
@@ -50,7 +63,6 @@ public class Server implements Runnable {
 						logger.log(Level.INFO, "Accepting connection");
 						final SocketChannel ch = sch.accept(); /* We're only listening on one socket */
 						ch.configureBlocking(false);
-						ch.register(sel, SelectionKey.OP_READ);
 
 						SMTPHandler.ConnectionHandler hnd = new SMTPHandler.ConnectionHandler() {
 							public void reply(String r) {
@@ -79,7 +91,7 @@ public class Server implements Runnable {
 						};
 
 						/* Register chain of line segmentation and protocol handling */
-						map.put(ch, new LineBufferThing(new SMTPHandler(hnd)));
+						ch.register(sel, SelectionKey.OP_READ, new LineBufferThing(new SMTPHandler(hnd, pubsub)));
 
 						/* Welcome our new friend. */
 						hnd.reply("220 "+name+" CrappySMTPd\r\n");
@@ -95,7 +107,7 @@ public class Server implements Runnable {
 							}
 
 							/* Call connection line segmentation */
-							map.get(ch).readLine(fnord);
+							((LineBufferThing)narf.attachment()).readLine(fnord);
 						} catch (BufferOverflowException ex) {
 							/* Ignore. */
 						} catch (IOException ex) {
