@@ -2,6 +2,7 @@ package net.jaseg.udpcraft.plaintext;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -48,6 +49,10 @@ public class Server implements Runnable {
 	public void stop() {
 		shouldStop = true;
 		sel.wakeup();
+	}
+	
+	public SocketAddress getAddress() throws IOException {
+		return sch.getLocalAddress();
 	}
 
 	public void run() {

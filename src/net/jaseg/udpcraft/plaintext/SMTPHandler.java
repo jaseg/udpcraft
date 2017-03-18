@@ -56,7 +56,7 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 					return;
 				}
 			} catch (IllegalArgumentException ex) {
-				ch.reply("550 Invalid arguments: "+ex.toString());
+				ch.reply("550 Invalid arguments: "+ex.toString()+"\r\n");
 				return;
 			}
 			ch.reply("250 OK\r\n");
