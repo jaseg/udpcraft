@@ -20,9 +20,11 @@ import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import net.jaseg.udpcraft.plaintext.TCPPlaintextServer;
+
 
 public class UDPCraftPlugin extends JavaPlugin {
-	private UDPCraftServer server;
+	private TCPPlaintextServer server;
 	private HashMap<String, Portal> listeners = new HashMap<String, Portal>();
 	private HashMap<Location, Portal> rlisteners = new HashMap<Location, Portal>();
 	private KeyParameter secret;
@@ -36,7 +38,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 		getConfig().options().copyDefaults(true);
 		saveConfig();
 		try {
-			server = new UDPCraftServer(this,
+			server = new TCPPlaintextServer(this,
 					getConfig().getInt("server.port"),
 					InetAddress.getByName(getConfig().getString("server.host")));
 		} catch(SocketException ex) {

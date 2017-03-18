@@ -122,7 +122,7 @@ public class Portal {
 		}
 		
 		String name = meta.getTitle();
-		if (!Pattern.matches("[0-9a-zA-Z_/]{3,16}", name)) {
+		if (!checkPortalName(name)) {
 			plugin.getLogger().log(Level.INFO, "Name does not match");
 			return false;
 		}
@@ -132,5 +132,9 @@ public class Portal {
 		cachedBlockState = (Chest)state;
 		cachedName = name;
 		return true;
+	}
+	
+	public static boolean checkPortalName(String name) {
+		return Pattern.matches("[0-9a-zA-Z_/]{3,16}", name);
 	}
 }
