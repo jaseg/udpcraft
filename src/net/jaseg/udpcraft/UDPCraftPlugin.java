@@ -1,7 +1,12 @@
 package net.jaseg.udpcraft;
 
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.SocketException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -10,6 +15,7 @@ import java.util.Map;
 import java.util.logging.Level;
 
 import org.bouncycastle.crypto.params.KeyParameter;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -26,13 +32,13 @@ public class UDPCraftPlugin extends JavaPlugin {
 	
 	@Override
 	public void onEnable() {
+		jarLoadingHack();
 		getConfig().options().copyDefaults(true);
 		saveConfig();
 		try {
 			server = new UDPCraftServer(this,
-					getConfig().getInt("socket.port"),
-					InetAddress.getByName(getConfig().getString("socket.host")));
-			getServer().getPluginManager().registerEvents(new ChestListener(this), this);
+					getConfig().getInt("server.port"),
+					InetAddress.getByName(getConfig().getString("server.host")));
 		} catch(SocketException ex) {
 			getLogger().log(Level.SEVERE, "Error creating listening socket", ex);
 			return;
@@ -53,7 +59,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 				tryRegisterPortal((Location)value);
 			}
 		} else {
-			getLogger().log(Level.WARNING, "Portal list not found. Creating an empty one.");
+			getLogger().log(Level.WARNING, "Portal list not found. ");
 			saveListeners();
 		}
 		
@@ -70,13 +76,58 @@ public class UDPCraftPlugin extends JavaPlugin {
 		
 		maxLifetimeSeconds = getConfig().getInt("maxLifetimeSeconds");
 		currentSerial = getConfig().getInt("currentSerial", 0);
+		getServer().getPluginManager().registerEvents(new ChestListener(this), this);
+		
+		getLogger().log(Level.INFO, "UDPCraft loaded successfully");
 	}
 	
 	@Override
 	public void onDisable() {
+		getLogger().log(Level.INFO, "Disabling UDPCraft");
 		if (server != null)
 			server.close();
 	}
+	
+	public void jarLoadingHack() {
+        try {
+            final File[] libs = new File[] {
+                    new File(getDataFolder(), "bcprov.jar") };
+            for (final File lib : libs) {
+                if (!lib.exists()) {
+                    JarUtils.extractFromJar(lib.getName(),
+                            lib.getAbsolutePath());
+                }
+            }
+            for (final File lib : libs) {
+                if (!lib.exists()) {
+                    getLogger().warning(
+                            "There was a critical error loading My plugin! Could not find lib: "
+                                    + lib.getName());
+                    Bukkit.getServer().getPluginManager().disablePlugin(this);
+                    return;
+                }
+                addClassPath(JarUtils.getJarUrl(lib));
+            }
+        } catch (final Exception e) {
+            e.printStackTrace();
+        }
+	}
+	
+    private void addClassPath(final URL url) throws IOException {
+        final URLClassLoader sysloader = (URLClassLoader) ClassLoader
+                .getSystemClassLoader();
+        final Class<URLClassLoader> sysclass = URLClassLoader.class;
+        try {
+            final Method method = sysclass.getDeclaredMethod("addURL",
+                    new Class[] { URL.class });
+            method.setAccessible(true);
+            method.invoke(sysloader, new Object[] { url });
+        } catch (final Throwable t) {
+            t.printStackTrace();
+            throw new IOException("Error adding " + url
+                    + " to system classloader");
+        }
+    }
 	
 	public KeyParameter getSecret() {
 		return secret;
@@ -90,6 +141,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 		int serial = currentSerial;
 		activeSerials.put(serial, System.currentTimeMillis());
 		currentSerial++;
+		getLogger().log(Level.INFO, "Issuing serial", serial);
 		return serial;
 	}
 	
@@ -97,11 +149,13 @@ public class UDPCraftPlugin extends JavaPlugin {
 		if (!activeSerials.containsKey(serial))
 			return false;
 		activeSerials.remove(serial);
+		getLogger().log(Level.INFO, "Voiding serial", serial);
 		return true;
 	}
 	
 	boolean tryRegisterPortal(Location location) {
 		Portal portal = Portal.fromLocation(this, location, server);
+		getLogger().log(Level.INFO, "Checking out potential portal location "+location.toString());
 		if (portal == null)
 			return false;
 		registerPortal(portal);
@@ -109,6 +163,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 	}
 	
 	private void registerPortal(Portal portal) {
+		getLogger().log(Level.INFO, "Registering portal at location "+portal.getLocation().toString());
 		listeners.put(portal.getName(), portal);
 		rlisteners.put(portal.getLocation(), portal);
 		saveListeners();
@@ -126,6 +181,7 @@ public class UDPCraftPlugin extends JavaPlugin {
 	}
 	
 	public boolean routeIncomingMessage(ItemMessage msg) {
+		getLogger().log(Level.INFO, "Routing message to", msg.portalName());
 		if (!listeners.containsKey(msg.portalName()))
 			return false;
 		listeners.get(msg.portalName()).receiveMessage(msg);

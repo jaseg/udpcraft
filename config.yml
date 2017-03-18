@@ -1,9 +1,5 @@
 server:
     port: 6129
-    host: localhost
-
-target:
-    port: 6130
-    host: localhost
+    host: 0.0.0.0
 
 maxLifetimeSeconds: 300

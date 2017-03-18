@@ -55,10 +55,10 @@ public class ItemMessage {
 		inner.put(cbytes);
 		
 		byte macbytes[] = new byte[MAC_LENGTH/8];
-		HMac hmac = new HMac(new SHA3Digest(256));
+		HMac hmac = new HMac(new SHA3Digest(MAC_LENGTH));
 		hmac.init(plugin.getSecret());
 		hmac.update(inner.array(), 0, innerLen);
-		hmac.doFinal(macbytes, macbytes.length);
+		hmac.doFinal(macbytes, 0);
 		
 		byte listenerBytes[] = portalName.getBytes();
 		int length = listenerBytes.length+macbytes.length+innerLen;
@@ -72,10 +72,10 @@ public class ItemMessage {
 	
 	public static ItemMessage deserialize(UDPCraftPlugin plugin, byte[] data) throws IllegalArgumentException {
 		ByteBuffer buf = ByteBuffer.wrap(data);
-		short len = buf.getShort();
-		String name = new String(buf.array(), 2, 2+len);
+		int len = buf.getInt();
+		String name = new String(buf.array(), buf.position(), len);
 		
-		ItemStack stack = unwrapItemStack(plugin, ByteBuffer.wrap(buf.array(), 2+len, buf.remaining()));
+		ItemStack stack = unwrapItemStack(plugin, ByteBuffer.wrap(buf.array(), buf.position()+len, buf.remaining()-len));
 		
 		return new ItemMessage(plugin, name, stack);
 	}
@@ -88,13 +88,15 @@ public class ItemMessage {
 		buf.get(macbytes_ref);
 		
 		int len = buf.getInt();
+		int serial = buf.getInt(); /* FIXME check and invalidate this */
 		long timestamp = buf.getLong();
-		
+
 		byte macbytes[] = new byte[MAC_LENGTH/8];
-		HMac hmac = new HMac(new SHA3Digest(256));
+		plugin.getLogger().log(Level.SEVERE, "Buffer params: "+buf.position()+" "+buf.remaining()+" "+buf.array().length+" "+macbytes.length+" "+len);
+		HMac hmac = new HMac(new SHA3Digest(MAC_LENGTH));
 		hmac.init(plugin.getSecret());
 		hmac.update(buf.array(), macbytes.length, len);
-		hmac.doFinal(macbytes, macbytes.length);
+		hmac.doFinal(macbytes, 0);
 		
 		if (!Arrays.constantTimeAreEqual(macbytes_ref, macbytes))
 			throw new IllegalArgumentException("Invalid keys");

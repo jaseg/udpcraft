@@ -3,6 +3,7 @@ package net.jaseg.udpcraft;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.logging.Level;
 import java.util.regex.Pattern;
 
 import org.bukkit.Location;
@@ -46,6 +47,7 @@ public class Portal {
 	}
 
 	public void emitItem(ItemStack stack) {
+		plugin.getLogger().log(Level.INFO, "Emitting message from "+cachedName);
 		ItemMessage msg = new ItemMessage(plugin, cachedName, stack);
 		outgoing.add(msg);
 		synchronized(this) {
@@ -60,20 +62,26 @@ public class Portal {
 	}
 	
 	public void receiveMessage(ItemMessage msg) {
+		plugin.getLogger().log(Level.INFO, "Received message at", cachedName);
 		if (!validateLocation())
 			plugin.unregisterPortal(this);
 		Inventory inventory = cachedBlockState.getBlockInventory();
 		
 		HashMap<Integer, ItemStack> excess = inventory.addItem(msg.getStack());
 		
-		if (!excess.isEmpty())
+		if (!excess.isEmpty()) {
+			plugin.getLogger().log(Level.INFO, "Excess content for target chest");
 			emitItem(excess.get(0));
+		}
 	}
 	
 	private boolean validateLocation() {
+		plugin.getLogger().log(Level.INFO, "Validating portal location");
 		BlockState state = location.getBlock().getState();
-		if (!(state instanceof Chest))
+		if (!(state instanceof Chest)) {
+			plugin.getLogger().log(Level.INFO, "Not instanceof chest");
 			return false;
+		}
 		
 		Inventory inventory = ((Chest)state).getBlockInventory();
 		
@@ -93,23 +101,33 @@ public class Portal {
 		
 		int last  = stacks.length-1,
 			first = stacks.length-materials.length;
-		for (int i=first; i<=last; i++)
+		for (int i=first; i<=last; i++) {
 			if (stacks[i] == null
 					|| stacks[i].getType() != materials[i-first]
-					|| stacks[i].getAmount() != 1)
+					|| stacks[i].getAmount() != 1) {
+				plugin.getLogger().log(Level.INFO, "Error with template index "+Integer.toString(i));
 				return false;
+			}
+		}
 		
 		BookMeta meta = (BookMeta)stacks[first+4].getItemMeta();
-		if (meta.getPageCount() == 0)
+		if (meta.getPageCount() == 0) {
+			plugin.getLogger().log(Level.INFO, "Page count is zero");
 			return false;
+		}
 
-		if (!meta.getPage(0).startsWith("This is a\nUDP Portal."))
+		if (!meta.getPage(1).startsWith("#!/udpportal")) {
+			plugin.getLogger().log(Level.INFO, "Shibboleth does not match: \""+meta.getPage(1)+"\"");
 			return false;
+		}
 		
 		String name = meta.getTitle();
-		if (!Pattern.matches("[0-9a-zA-Z_/]{3,16}", name))
+		if (!Pattern.matches("[0-9a-zA-Z_/]{3,16}", name)) {
+			plugin.getLogger().log(Level.INFO, "Name does not match");
 			return false;
+		}
 
+		plugin.getLogger().log(Level.INFO, "Portal accepted. Name: "+name);
 		state.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, name));
 		cachedBlockState = (Chest)state;
 		cachedName = name;

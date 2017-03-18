@@ -27,6 +27,7 @@ public class UDPCraftServer implements Runnable, ItemListener {
 	public UDPCraftServer(UDPCraftPlugin plugin, int port, InetAddress addr) throws SocketException {
 		this.plugin = plugin;
 		this.addr = new InetSocketAddress(addr, port);
+		plugin.getLogger().log(Level.INFO, "Starting UDPCraft listener on port "+Integer.toString(port));
 		this.listener = new Thread(this);
 		this.listener.start();
 	}
@@ -45,11 +46,16 @@ public class UDPCraftServer implements Runnable, ItemListener {
 	}
 	
 	public void emitMessage(Portal portal, ItemMessage msg) {
+		plugin.getLogger().log(Level.INFO, "Handling message TCP transportation for "+portal.getName());
 		if (portalConns.containsKey(portal)) {
+			plugin.getLogger().log(Level.INFO, "Handling message TCP transport on connection");
 			portal.ackMessage(msg);
 			for (Connection conn : portalConns.get(portal)) {
+				plugin.getLogger().log(Level.INFO, conn.toString());
 				conn.enqueueMessage(msg);
 			}
+		} else {
+			plugin.getLogger().log(Level.INFO, "No handlers found");
 		}
 	}
 	
@@ -79,7 +85,7 @@ public class UDPCraftServer implements Runnable, ItemListener {
 		}
 		
 		private SocketChannel ch;
-		private ByteBuffer rbuf = ByteBuffer.allocate(16);
+		private ByteBuffer rbuf = ByteBuffer.allocate(HEADER_BYTES);
 		State state = State.RX_HEADER;
 		Tag tag;
 		private Queue<ItemMessage> msgs = new LinkedList<ItemMessage>();
@@ -95,9 +101,11 @@ public class UDPCraftServer implements Runnable, ItemListener {
 		}
 		
 		public void enqueueMessage(ItemMessage msg) {
+			plugin.getLogger().log(Level.INFO, "Queueing message");
 			msgs.add(msg);
 			try {
-				ch.write(ByteBuffer.allocate(0));
+				handleWrite();
+				// FIXME ch.write(ByteBuffer.allocate(0));
 			} catch(IOException ex) {
 				plugin.getLogger().log(Level.WARNING, "IOException on tx");
 			}
@@ -117,22 +125,27 @@ public class UDPCraftServer implements Runnable, ItemListener {
 		}
 		
 		private void handleRead() throws IOException {
-			ch.read(new ByteBuffer[] { rbuf }, 0, rbuf.remaining());
+			plugin.getLogger().log(Level.INFO, "Reading from connection, buffer size: "+Integer.toString(rbuf.remaining()));
+			ch.read(rbuf);
 			if (!rbuf.hasRemaining()) {
+				rbuf.rewind();
 				switch(state) {
 				case RX_HEADER:
+					plugin.getLogger().log(Level.INFO, "Handling tcp conn header");
 					Tag[] tags = Tag.values();
 					int itag = rbuf.getInt();
 					if (itag >= tags.length)
 						throw new IllegalArgumentException("Illegal tag");
-					tag = tags[rbuf.getInt()];
+					tag = tags[itag];
 					int len = rbuf.getInt();
+					/* FIXME add length check */
 					rbuf = ByteBuffer.allocate(len);
 					state = State.RX_PAYLOAD;
 					break;
 				case RX_PAYLOAD:
 					switch (tag) {
 					case SUBMIT_ITEMS:
+						plugin.getLogger().log(Level.INFO, "Handling SUBMIT_ITEMS");
 						ItemMessage msg = ItemMessage.deserialize(plugin, rbuf.array());
 						plugin.routeIncomingMessage(msg);
 						break;
@@ -144,13 +157,17 @@ public class UDPCraftServer implements Runnable, ItemListener {
 							plugin.getLogger().log(Level.INFO, "Unknown portal", name);
 							break;
 						}
-						if (tag == Tag.SUBSCRIBE_PORTAL)
+						if (tag == Tag.SUBSCRIBE_PORTAL) {
+							plugin.getLogger().log(Level.INFO, "Handling SUSCRIBE_PORTAL");
 							server.registerPortalConn(portal, this);
-						else
+						} else {
+							plugin.getLogger().log(Level.INFO, "Handling UNSUSCRIBE_PORTAL");
 							server.unregisterPortalConn(portal, this);
+						}
 						break;
 					}
-					rbuf = ByteBuffer.allocate(16);
+					rbuf = ByteBuffer.allocate(HEADER_BYTES);
+					state = State.RX_HEADER;
 					break;
 				}
 			}
@@ -159,6 +176,7 @@ public class UDPCraftServer implements Runnable, ItemListener {
 	
 	public void run() {
 		try {
+			plugin.getLogger().log(Level.INFO, "Running UDPCraft TCP server");
 			selector = Selector.open();
 			ServerSocketChannel sch = ServerSocketChannel.open();
 			sch.setOption(StandardSocketOptions.SO_REUSEADDR, true);
@@ -167,15 +185,19 @@ public class UDPCraftServer implements Runnable, ItemListener {
 			sch.register(selector, sch.validOps(), null);
 			
 			while(true) {
+				plugin.getLogger().log(Level.INFO, "Running UDPCraft TCP server selector");
 				selector.select();
+				plugin.getLogger().log(Level.INFO, "Processing UDPCraft TCP server events");
 				Set<SelectionKey> keys = selector.selectedKeys();
 				for (SelectionKey key : keys) {
 					if (key.isAcceptable()) {
+						plugin.getLogger().log(Level.INFO, "Accepting UDPCraft TCP server connection");
 						SocketChannel ch = sch.accept();
 						ch.configureBlocking(false);
 						Connection conn = new Connection(plugin, this, ch);
-						ch.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, conn);
+						ch.register(selector, SelectionKey.OP_READ/* | SelectionKey.OP_WRITE*/, conn);
 					} else if (key.isReadable()) {
+						plugin.getLogger().log(Level.INFO, "Reading from UDPCraft TCP server connection");
 						try {
 							((Connection)key.attachment()).handleRead();
 						} catch(IllegalArgumentException ex) {
@@ -183,13 +205,14 @@ public class UDPCraftServer implements Runnable, ItemListener {
 						} catch(IOException ex) {
 							plugin.getLogger().log(Level.WARNING, "IOException on rx");
 						}
-					} else if (key.isWritable()) {
+					}/* FIXME else if (key.isWritable()) {
+						plugin.getLogger().log(Level.INFO, "Writing to UDPCraft TCP server connection");
 						try {
 							((Connection)key.attachment()).handleWrite();
 						} catch(IOException ex) {
 							plugin.getLogger().log(Level.WARNING, "IOException on tx");
 						}
-					}
+					}*/
 				}
 				keys.clear();
 			}
