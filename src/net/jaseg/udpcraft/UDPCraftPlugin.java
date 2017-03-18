@@ -133,10 +133,6 @@ public class UDPCraftPlugin extends JavaPlugin {
 		return secret;
 	}
 	
-	public long getMaxLifetimeSeconds() {
-		return maxLifetimeSeconds;
-	}
-	
 	public synchronized int nextSerial() {
 		int serial = currentSerial;
 		activeSerials.put(serial, System.currentTimeMillis());
@@ -148,6 +144,9 @@ public class UDPCraftPlugin extends JavaPlugin {
 	public synchronized boolean voidSerial(int serial) {
 		if (!activeSerials.containsKey(serial))
 			return false;
+
+		if (System.currentTimeMillis() - activeSerials.get(serial) > maxLifetimeSeconds)
+			throw new IllegalArgumentException("Item is expired!");
 		activeSerials.remove(serial);
 		getLogger().log(Level.INFO, "Voiding serial", serial);
 		return true;

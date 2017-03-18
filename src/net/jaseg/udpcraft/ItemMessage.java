@@ -47,11 +47,9 @@ public class ItemMessage {
 			throw new IllegalArgumentException();
 		}
 		
-		int innerLen = cbytes.length + 16;
+		int innerLen = cbytes.length + 4;
 		ByteBuffer inner = ByteBuffer.allocate(innerLen);
-		inner.putInt(innerLen); // buffer length
 		inner.putInt(plugin.nextSerial());
-		inner.putLong(System.currentTimeMillis()); // timestamp
 		inner.put(cbytes);
 		
 		byte macbytes[] = new byte[MAC_LENGTH/8];
@@ -59,12 +57,12 @@ public class ItemMessage {
 		hmac.init(plugin.getSecret());
 		hmac.update(inner.array(), 0, innerLen);
 		hmac.doFinal(macbytes, 0);
-		
-		byte listenerBytes[] = portalName.getBytes();
-		int length = listenerBytes.length+macbytes.length+innerLen;
-		ByteBuffer outer = ByteBuffer.allocate(4+length);
-		outer.putInt(length);
-		outer.put(listenerBytes);
+
+		byte nameBytes[] = portalName.getBytes();
+		int length = 1 + nameBytes.length + macbytes.length + innerLen;
+		ByteBuffer outer = ByteBuffer.allocate(length);
+		outer.put((byte)nameBytes.length);
+		outer.put(nameBytes);
 		outer.put(macbytes);
 		outer.put(inner);
 		return outer.array();
@@ -72,8 +70,8 @@ public class ItemMessage {
 	
 	public static ItemMessage deserialize(UDPCraftPlugin plugin, byte[] data) throws IllegalArgumentException {
 		ByteBuffer buf = ByteBuffer.wrap(data);
-		int len = buf.getInt();
-		String name = new String(buf.array(), buf.position(), len);
+		int nameLen = buf.getChar();
+		String name = new String(buf.array(), buf.position(), nameLen);
 		
 		ItemStack stack = unwrapItemStack(plugin, ByteBuffer.wrap(buf.array(), buf.position()+len, buf.remaining()-len));
 		
@@ -81,28 +79,26 @@ public class ItemMessage {
 	}
 	
 	private static ItemStack unwrapItemStack(UDPCraftPlugin plugin, ByteBuffer buf) throws IllegalArgumentException{
-		if (buf.remaining() < MAC_LENGTH/8 + 12 + 1)
+		if (buf.remaining() < MAC_LENGTH/8 + 1)
 			throw new IllegalArgumentException("Invalid framing: not enough data");
 
 		byte macbytes_ref[] = new byte[MAC_LENGTH/8];
 		buf.get(macbytes_ref);
 		
-		int len = buf.getInt();
 		int serial = buf.getInt(); /* FIXME check and invalidate this */
-		long timestamp = buf.getLong();
 
 		byte macbytes[] = new byte[MAC_LENGTH/8];
-		plugin.getLogger().log(Level.SEVERE, "Buffer params: "+buf.position()+" "+buf.remaining()+" "+buf.array().length+" "+macbytes.length+" "+len);
+		plugin.getLogger().log(Level.SEVERE, "Buffer params: "+buf.position()+" "+buf.remaining()+" "+buf.array().length+" "+macbytes.length);
 		HMac hmac = new HMac(new SHA3Digest(MAC_LENGTH));
 		hmac.init(plugin.getSecret());
-		hmac.update(buf.array(), macbytes.length, len);
+		hmac.update(buf.array(), buf.position(), buf.remaining());
 		hmac.doFinal(macbytes, 0);
 		
 		if (!Arrays.constantTimeAreEqual(macbytes_ref, macbytes))
 			throw new IllegalArgumentException("Invalid keys");
 
-		if (System.currentTimeMillis() - timestamp > plugin.getMaxLifetimeSeconds())
-			throw new IllegalArgumentException("Item is expired!");
+		if (!plugin.voidSerial(serial))
+			throw new IllegalArgumentException("Serial is already void");
 		
 		FileConfiguration fconfig = new YamlConfiguration();
 		String cstring = new String(buf.array(), buf.position(), buf.remaining());
