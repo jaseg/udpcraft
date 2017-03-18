@@ -1,9 +1,11 @@
 package net.jaseg.udpcraft;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.bukkit.Material;
 import org.bukkit.block.Chest;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -44,9 +46,30 @@ public class ChestListener implements Listener {
 					logger.log(Level.WARNING, "Invalid metadata with unknown name on portal chest", chest);
 					return;
 				}
+				
 				ItemStack stack = evt.getItem();
-				portal.emitItem(stack.clone());
-				stack.setAmount(0);
+				ItemStack contents[] = dest.getContents();
+				int origAmount = stack.getAmount();
+				int toDelete = origAmount;
+				Material sm = stack.getType();
+				for (int i=0; i<contents.length-9; i++) {
+					if (contents[i] != null && contents[i].getType() == sm) {
+						int amount = contents[i].getAmount();
+						if (amount <= toDelete) {
+							toDelete -= amount;
+							contents[i] = null;
+						} else {
+							contents[i].setAmount(amount-toDelete);
+							toDelete = 0;
+							break;
+						}
+					}
+				}
+				stack.setAmount(origAmount - toDelete);
+				dest.setContents(contents);
+				if (origAmount != toDelete)
+					portal.emitItem(stack);
+				evt.setItem(stack);
 			}
 		}
 	}

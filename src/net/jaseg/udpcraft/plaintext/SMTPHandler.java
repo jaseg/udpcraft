@@ -24,7 +24,7 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 	
 	public void emitMessage(Portal portal, ItemMessage msg) {
 		synchronized (ch) {
-			ch.reply("ITEM "+portal.getName()+" "+Base64.encode(msg.serialize()));
+			ch.reply("ITEM "+portal.getName()+" "+Base64.encode(msg.serialize())+"\r\n");
 		}
 	}
 	
@@ -44,7 +44,7 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 					if (args.length != 3)
 						throw new IllegalArgumentException("Invalid number of arguments");
 					try {
-						pubsub.submit(args[1], Base64.decode(args[1]));
+						pubsub.submit(args[1], Base64.decode(args[2]));
 					} catch (Base64DecodingException ex) {
 						throw new IllegalArgumentException("Invalid Base64-encoded message");
 					}

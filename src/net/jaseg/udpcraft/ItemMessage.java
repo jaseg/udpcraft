@@ -85,9 +85,7 @@ public class ItemMessage {
 		if (!Arrays.constantTimeAreEqual(macbytes_ref, macbytes))
 			throw new IllegalArgumentException("Invalid signature");
 
-		int serial = buf.getInt();
-		if (!plugin.voidSerial(serial))
-			throw new IllegalArgumentException("Serial is already void");
+		plugin.voidSerial(buf.getInt());
 		
 		byte out[] = new byte[buf.remaining()];
 		buf.get(out);

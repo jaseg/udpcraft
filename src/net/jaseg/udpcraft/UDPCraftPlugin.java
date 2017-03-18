@@ -7,9 +7,13 @@ import java.net.InetSocketAddress;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.logging.Level;
 
 import org.bouncycastle.crypto.params.KeyParameter;
@@ -24,11 +28,12 @@ import net.jaseg.udpcraft.plaintext.Server;
 public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, SignatureDataStore {
 	private HashMap<String, Portal> portals = new HashMap<String, Portal>();
 	private KeyParameter secret;
-	private int maxLifetimeSeconds;
+	private int maxLifetimeMillis;
 	private int currentSerial;
 	private Map<Integer, Long> activeSerials = new HashMap<Integer, Long>();
 	private ConnectionMux mux = new ConnectionMux(getLogger(), this, this);
 	private Server server;
+	private TimerTask tokenPurgeTask;
 	
 	@Override
 	public void onEnable() {
@@ -37,7 +42,7 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		saveConfig();
 		try {
 			server = new Server(getLogger(),
-					InetSocketAddress.createUnresolved(getConfig().getString("server.host"), getConfig().getInt("server.port")),
+					new InetSocketAddress(getConfig().getString("server.host"), getConfig().getInt("server.port")),
 					getServer().getName(),
 					mux);
 		} catch(IOException ex) {
@@ -72,11 +77,25 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		}
 		secret = new KeyParameter(getConfig().getString("secret").getBytes());
 		
-		maxLifetimeSeconds = getConfig().getInt("maxLifetimeSeconds");
+		if (getConfig().isSet("activeTokens")) {
+			long now = System.currentTimeMillis();
+			for (Integer token : getConfig().getIntegerList("activeTokens"))
+				activeSerials.put(token, now);
+		}
+		
+		maxLifetimeMillis = getConfig().getInt("maxLifetimeSeconds")*1000;
 		currentSerial = getConfig().getInt("currentSerial", 0);
 		getServer().getPluginManager().registerEvents(new ChestListener(getLogger(), this), this);
 		
 		server.start();
+		
+		tokenPurgeTask = new TimerTask() {
+			public void run() {
+				
+			}
+		};
+		Timer timer = new Timer("UDPCraft Token Purger");
+		timer.schedule(tokenPurgeTask, maxLifetimeMillis, maxLifetimeMillis);
 		
 		getLogger().log(Level.INFO, "UDPCraft loaded successfully");
 	}
@@ -86,6 +105,9 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		getLogger().log(Level.INFO, "Disabling UDPCraft");
 		if (server != null)
 			server.stop();
+		tokenPurgeTask.cancel();
+		getConfig().set("activeTokens", new ArrayList<Integer>(activeSerials.keySet()));
+		saveConfig();
 	}
 	
 	public void jarLoadingHack() {
@@ -142,15 +164,16 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		return serial;
 	}
 	
-	public synchronized boolean voidSerial(int serial) {
+	public synchronized void voidSerial(int serial) {
 		if (!activeSerials.containsKey(serial))
-			return false;
+			throw new IllegalArgumentException("Invalid key!");
 
-		if (System.currentTimeMillis() - activeSerials.get(serial) > maxLifetimeSeconds)
+		if (System.currentTimeMillis() - activeSerials.get(serial) > maxLifetimeMillis) {
+			getLogger().log(Level.INFO, "Expired item with time "+activeSerials.get(serial)+", current time "+System.currentTimeMillis()+", max lifetime "+maxLifetimeMillis);
 			throw new IllegalArgumentException("Item is expired!");
+		}
 		activeSerials.remove(serial);
 		getLogger().log(Level.INFO, "Voiding serial", serial);
-		return true;
 	}
 	
 	/* Portal index */
@@ -159,6 +182,10 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		getLogger().log(Level.INFO, "Checking out potential portal location "+location.toString());
 		if (portal == null)
 			return false;
+		if (portals.containsKey(portal.getName()) && portals.get(portal.getName()).getLocation().equals(location)) {
+			getLogger().log(Level.INFO, "Portal already known.");
+			return true;
+		}
 		registerPortal(portal);
 		return true;
 	}
@@ -170,7 +197,10 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 	}
 	
 	public void savePortals() {
-		getConfig().createSection("portals", portals);
+		Map <String, Location> locationmap = new HashMap<String, Location>();
+		for (Map.Entry<String, Portal> e : portals.entrySet())
+			locationmap.put(e.getKey(), e.getValue().getLocation());
+		ConfigurationSection section = getConfig().createSection("portals", locationmap);
 		saveConfig();
 	}
 

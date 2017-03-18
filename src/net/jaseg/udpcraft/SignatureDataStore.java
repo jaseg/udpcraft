@@ -5,5 +5,5 @@ import org.bouncycastle.crypto.params.KeyParameter;
 public interface SignatureDataStore {
 	public KeyParameter getSecret();
 	public int nextSerial();
-	public boolean voidSerial(int serial);
+	public void voidSerial(int serial) throws IllegalArgumentException;
 }

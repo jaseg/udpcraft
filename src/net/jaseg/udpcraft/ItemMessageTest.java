@@ -40,7 +40,6 @@ public class ItemMessageTest {
 		UDPCraftPlugin plugin = mock(UDPCraftPlugin.class);
 		ArgumentCaptor<Integer> captor = ArgumentCaptor.forClass(Integer.class);
 		when(plugin.getSecret()).thenReturn(new KeyParameter("foobar".getBytes()));
-		when(plugin.voidSerial(captor.capture())).thenReturn(true);
 		
 		byte payload[] = ItemMessage.unsign(plugin, data);
 		
