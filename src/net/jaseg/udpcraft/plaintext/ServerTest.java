@@ -1,14 +1,10 @@
 package net.jaseg.udpcraft.plaintext;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertThat;
 import static org.hamcrest.core.StringStartsWith.startsWith;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.*;
+import static org.mockito.Mockito.*;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -24,7 +20,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.Timeout;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
 import org.mockito.Mockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
@@ -50,6 +45,7 @@ public class ServerTest {
 	@Before
 	public void setUp() throws IOException {
 		portal = mock(Portal.class);
+		when(portal.getPassword()).thenReturn(null);
 		index = mock(PortalIndex.class);
 		when(index.lookupPortal(null)).thenReturn(portal);
 		when(index.lookupPortalOrDie(null)).thenReturn(portal);
@@ -64,7 +60,7 @@ public class ServerTest {
 	public void testSetupShutdown() {
 		server.start();
 		try {
-			Thread.sleep(500);
+			Thread.sleep(100);
 		} catch(InterruptedException ex) {}
 		server.stop();
 	}
@@ -97,7 +93,7 @@ public class ServerTest {
 			Thread.sleep(100);
 		} catch (InterruptedException ex) {}
 		assertThat(reader.readLine(), startsWith("250 OK"));
-		verify(mux).subscribe(eq("testportal"), any());
+		verify(mux).subscribe(eq("testportal"), (String)isNull(), any());
 
 		os.write("UNSUBSCRIBE testportal\r\n".getBytes());
 		try {
@@ -105,6 +101,13 @@ public class ServerTest {
 		} catch (InterruptedException ex) {}
 		assertThat(reader.readLine(), startsWith("250 OK"));
 		verify(mux).unsubscribe(eq("testportal"), any());
+
+		os.write("SUBSCRIBE testportal secretpassword\r\n".getBytes());
+		try {
+			Thread.sleep(100);
+		} catch (InterruptedException ex) {}
+		assertThat(reader.readLine(), startsWith("250 OK"));
+		verify(mux).subscribe(eq("testportal"), eq("secretpassword"), any());
 		
 		s.close();
 		server.stop();

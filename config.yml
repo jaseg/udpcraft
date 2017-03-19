@@ -2,4 +2,6 @@ server:
     port: 6129
     host: 0.0.0.0
 
-maxLifetimeSeconds: 300
+maxLifetimeSeconds: 1800
+updateDelayMillis: 3000
+maxUpdateDelayMillis: 15000

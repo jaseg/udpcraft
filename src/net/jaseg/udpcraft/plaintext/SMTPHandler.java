@@ -22,20 +22,23 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 		this.pubsub = pubsub;
 	}
 	
-	public void emitMessage(Portal portal, ItemMessage msg) {
+	public boolean emitMessage(Portal portal, ItemMessage msg) {
 		synchronized (ch) {
 			ch.reply("ITEM "+portal.getName()+" "+Base64.encode(msg.serialize())+"\r\n");
 		}
+		return true;
 	}
 	
 	public void handleLine(String line) {
 		synchronized (ch) {
 			try {
-				String [] args = line.split(" ");
+				String [] args = line.split("\\s+");
 				if (args[0].equals("SUBSCRIBE")) {
-					if (args.length != 2)
-						throw new IllegalArgumentException("Invalid number of arguments");
-					pubsub.subscribe(args[1], this);
+					if (args.length == 2)
+						pubsub.subscribe(args[1], null, this);
+					else if (args.length == 3)
+						pubsub.subscribe(args[1], args[2], this);
+					else throw new IllegalArgumentException("Invalid number of arguments");
 				} else if (args[0].equals("UNSUBSCRIBE")) {
 					if (args.length != 2)
 						throw new IllegalArgumentException("Invalid number of arguments");

@@ -1,9 +1,13 @@
 package net.jaseg.udpcraft;
 
+import java.time.Clock;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.List;
+import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import org.bukkit.Location;
@@ -17,124 +21,196 @@ import org.bukkit.metadata.FixedMetadataValue;
 
 public class Portal {
 	public static final String METADATA_KEY = "net.jaseg.udpcraft.isportal";
+	private static Timer staticTimer = new Timer();
 	
-	private String cachedName;
+	public static class InvalidLocationException extends Exception {
+		private static final long serialVersionUID = 6670188551758192901L;
+
+		public InvalidLocationException(String msg) {
+			super("Not a portal: "+msg);
+		}
+	};
+	
+	public static Material MATERIAL_TEMPLATE[] = {
+			Material.DIAMOND_BLOCK,
+			Material.DIAMOND_BLOCK,
+			Material.REDSTONE_BLOCK,
+			Material.ENDER_PEARL,
+			Material.WRITTEN_BOOK,
+			Material.ENDER_PEARL,
+			Material.REDSTONE_BLOCK,
+			Material.DIAMOND_BLOCK,
+			Material.DIAMOND_BLOCK
+	};
+	
+	public static enum Direction { IN, OUT };
+	
+	private String name;
 	private Location location;
 	private ItemListener listener;
-	private Set<ItemMessage> outgoing = new HashSet<ItemMessage>();
 	private UDPCraftPlugin plugin;
-	private Chest cachedBlockState;
+	private Logger logger;
+	private int updateDelay;
+	private int maxUpdateDelay;
+	private Direction direction = Direction.OUT;
+	private Map<String, String> config = new HashMap<String, String>();
 	
-	private Portal(UDPCraftPlugin plugin, Location loc, ItemListener listener) {
-		this.plugin = plugin;
-		this.location = loc;
-		this.listener = listener;
+	private long lastUpdate;
+	private TimerTask updateTask;
+
+	private Timer timer = staticTimer;
+	private Clock clock = Clock.systemDefaultZone();
+	
+	public synchronized void queueUpdate() {
+		if (direction != Direction.OUT)
+			return;
+			
+		if (updateTask != null) {
+			if (clock.millis() - lastUpdate > maxUpdateDelay-updateDelay) {
+				return;
+			} else {
+				updateTask.cancel();
+			}
+		}
+
+		updateTask = new TimerTask() {
+			public void run() {
+				updateTask = null;
+				synchronized(Portal.this) {
+					lastUpdate = clock.millis();
+					try {
+						Inventory inv = validateLocation().getBlockInventory();
+						ItemStack stacks[] = inv.getContents();
+
+						for (int i=0; i<stacks.length-MATERIAL_TEMPLATE.length; i++) {
+							if (stacks[i] != null) {
+								if (emitItem(stacks[i]))
+									stacks[i] = null;
+							}
+						}
+						
+						inv.setContents(stacks);
+					} catch(InvalidLocationException ex) {
+						plugin.unregisterPortal(Portal.this);
+					} 
+				}
+			}
+		};
+		timer.schedule(updateTask, updateDelay);
 	}
 	
-	public static Portal fromLocation(UDPCraftPlugin plugin, Location loc, ItemListener listener) {
-		Portal portal = new Portal(plugin, loc, listener);
-		if (!portal.validateLocation())
-			return null;
-		return portal;
+	public Portal(Logger logger, UDPCraftPlugin plugin, Location loc, ItemListener listener) throws InvalidLocationException {
+		this.plugin = plugin;
+		this.logger = logger;
+		this.location = loc;
+		this.listener = listener;
+		this.updateDelay = plugin.getConfig().getInt("updateDelayMillis");
+		this.maxUpdateDelay = plugin.getConfig().getInt("maxUpdateDelayMillis");
+		validateLocation();
 	}
 	
 	public String getName() {
-		return cachedName;
+		return name;
 	}
 	
 	public Location getLocation() {
 		return location;
 	}
+	
+	public Direction getDirection() {
+		return direction;
+	}
+	
+	public String getPassword() {
+		return config.getOrDefault("password", null);
+	}
 
-	public void emitItem(ItemStack stack) {
-		plugin.getLogger().log(Level.INFO, "Emitting message from "+cachedName);
-		ItemMessage msg = new ItemMessage(plugin, cachedName, stack);
-		outgoing.add(msg);
-		synchronized(this) {
-			if (listener != null) {
-				listener.emitMessage(this, msg);
-			}
-		}
+	public boolean emitItem(ItemStack stack) {
+		logger.log(Level.INFO, "Emitting message from "+name);
+		ItemMessage msg = new ItemMessage(plugin, name, stack);
+		return listener != null && listener.emitMessage(this, msg);
 	}
 	
-	public void ackMessage(ItemMessage msg) {
-		outgoing.remove(msg);
-	}
-	
-	public void receiveMessage(ItemMessage msg) {
-		plugin.getLogger().log(Level.INFO, "Received message at", cachedName);
-		if (!validateLocation())
+	public void receiveMessage(ItemMessage msg) throws InvalidLocationException {
+		logger.log(Level.INFO, "Received message at", name);
+		Chest state = validateLocation();
+		if (state == null)
 			plugin.unregisterPortal(this);
-		Inventory inventory = cachedBlockState.getBlockInventory();
 		
+		if (direction != Direction.IN)
+			throw new InvalidLocationException("Portal is not an INPUT portal");
+		
+		Inventory inventory = state.getBlockInventory();
 		HashMap<Integer, ItemStack> excess = inventory.addItem(msg.getStack());
-		
 		if (!excess.isEmpty()) {
-			plugin.getLogger().log(Level.INFO, "Excess content for target chest");
+			logger.log(Level.INFO, "Excess content for target chest");
 			emitItem(excess.get(0));
 		}
 	}
 	
-	private boolean validateLocation() {
-		plugin.getLogger().log(Level.INFO, "Validating portal location");
+	private Chest validateLocation() throws InvalidLocationException {
+		logger.log(Level.INFO, "Validating portal location");
 		BlockState state = location.getBlock().getState();
-		if (!(state instanceof Chest)) {
-			plugin.getLogger().log(Level.INFO, "Not instanceof chest");
-			return false;
-		}
+		if (!(state instanceof Chest))
+			throw new InvalidLocationException("Not instanceof chest");
 		
 		Inventory inventory = ((Chest)state).getBlockInventory();
-		
 		ItemStack stacks[] = inventory.getContents();
 		
-		Material materials[] = {
-				Material.DIAMOND_BLOCK,
-				Material.DIAMOND_BLOCK,
-				Material.REDSTONE_BLOCK,
-				Material.ENDER_PEARL,
-				Material.WRITTEN_BOOK,
-				Material.ENDER_PEARL,
-				Material.REDSTONE_BLOCK,
-				Material.DIAMOND_BLOCK,
-				Material.DIAMOND_BLOCK
-		};
-		
-		int last  = stacks.length-1,
-			first = stacks.length-materials.length;
-		for (int i=first; i<=last; i++) {
+		int first = stacks.length-MATERIAL_TEMPLATE.length;
+		for (int i=first; i<stacks.length; i++) {
 			if (stacks[i] == null
-					|| stacks[i].getType() != materials[i-first]
+					|| stacks[i].getType() != MATERIAL_TEMPLATE[i-first]
 					|| stacks[i].getAmount() != 1) {
-				plugin.getLogger().log(Level.INFO, "Error with template index "+Integer.toString(i));
-				return false;
+				throw new InvalidLocationException("Template error at slot "+Integer.toString(i));
 			}
 		}
 		
 		BookMeta meta = (BookMeta)stacks[first+4].getItemMeta();
-		if (meta.getPageCount() == 0) {
-			plugin.getLogger().log(Level.INFO, "Page count is zero");
-			return false;
-		}
+		if (meta.getPageCount() == 0)
+			throw new InvalidLocationException("Page count is zero");
 
-		if (!meta.getPage(1).startsWith("#!/udpportal")) {
-			plugin.getLogger().log(Level.INFO, "Shibboleth does not match: \""+meta.getPage(1)+"\"");
-			return false;
-		}
+		List<String> pages = meta.getPages();
+		if (!removeFormatting(pages.get(0)).startsWith("#!/udpportal"))
+			throw new InvalidLocationException("Shibboleth does not match: \""+meta.getPage(1)+"\"");
 		
-		String name = meta.getTitle();
-		if (!checkPortalName(name)) {
-			plugin.getLogger().log(Level.INFO, "Name does not match");
-			return false;
+		Pattern pat = Pattern.compile("\\s*:\\s*");
+		for (String page : pages) {
+			for (String line : page.split("\\r?\n")) {
+				String parts[] = pat.split(removeFormatting(line.trim()), 2);
+				if (parts.length == 2)
+					config.put(parts[0].toLowerCase(), parts[1]);
+			}
 		}
 
-		plugin.getLogger().log(Level.INFO, "Portal accepted. Name: "+name);
-		state.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, name));
-		cachedBlockState = (Chest)state;
-		cachedName = name;
-		return true;
+		name = config.getOrDefault("name", null);
+		if (name == null)
+			throw new InvalidLocationException("Name missing");
+
+		if (!checkPortalName(name))
+			throw new InvalidLocationException("Name invalid");
+
+		direction = config.getOrDefault("direction", config.getOrDefault("dir", "OUT")).equals("OUT") ? Direction.OUT : Direction.IN;
+
+		logger.log(Level.INFO, "Portal accepted. Name: "+config.get("name")+" Direction: "+direction);
+		state.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, true));
+		return (Chest)state;
 	}
 	
 	public static boolean checkPortalName(String name) {
 		return Pattern.matches("[0-9a-zA-Z_/]{3,16}", name);
+	}
+	
+	public static String removeFormatting(String formatted) {
+		return formatted.replaceAll("§.", "");
+	}
+	
+	/* For testing */
+	public void setClock(Clock clock) {
+		this.clock = clock;
+	}
+	
+	public void setTimer(Timer timer) {
+		this.timer = timer;
 	}
 }

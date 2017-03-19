@@ -10,7 +10,6 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -178,20 +177,28 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 	
 	/* Portal index */
 	public boolean tryRegisterPortal(Location location) {
-		Portal portal = Portal.fromLocation(this, location, mux);
 		getLogger().log(Level.INFO, "Checking out potential portal location "+location.toString());
-		if (portal == null)
-			return false;
-		if (portals.containsKey(portal.getName()) && portals.get(portal.getName()).getLocation().equals(location)) {
-			getLogger().log(Level.INFO, "Portal already known.");
+		try {
+			Portal portal = new Portal(getLogger(), this, location, mux);
+			String name = portal.getName();
+			
+			if (portals.containsKey(name)) {
+				if (portals.get(name).getLocation().equals(location))
+					getLogger().log(Level.INFO, "Portal \""+name+"\" already known");
+				else
+					getLogger().log(Level.INFO, "Overriding portal \""+name+"\"");
+			} else {
+				getLogger().log(Level.INFO, "Creating new portal \""+name+"\"");
+			}
+			
+			registerPortal(portal);
 			return true;
+		} catch (Portal.InvalidLocationException ex) {
+			return false;
 		}
-		registerPortal(portal);
-		return true;
 	}
 	
 	public void registerPortal(Portal portal) {
-		getLogger().log(Level.INFO, "Registering portal at location "+portal.getLocation().toString());
 		portals.put(portal.getName(), portal);
 		savePortals();
 	}
@@ -200,7 +207,7 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 		Map <String, Location> locationmap = new HashMap<String, Location>();
 		for (Map.Entry<String, Portal> e : portals.entrySet())
 			locationmap.put(e.getKey(), e.getValue().getLocation());
-		ConfigurationSection section = getConfig().createSection("portals", locationmap);
+		getConfig().createSection("portals", locationmap);
 		saveConfig();
 	}
 

@@ -1,8 +1,9 @@
 package net.jaseg.udpcraft;
 
 import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.bouncycastle.crypto.params.KeyParameter;
@@ -11,7 +12,6 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
@@ -38,12 +38,11 @@ public class ItemMessageTest {
 	
 	private void unsignImpl(byte data[], String portalname, int serial) {
 		UDPCraftPlugin plugin = mock(UDPCraftPlugin.class);
-		ArgumentCaptor<Integer> captor = ArgumentCaptor.forClass(Integer.class);
 		when(plugin.getSecret()).thenReturn(new KeyParameter("foobar".getBytes()));
 		
 		byte payload[] = ItemMessage.unsign(plugin, data);
 		
-		assertEquals(serial, (int)captor.getValue());
+		verify(plugin).voidSerial(eq(serial));
 		assertArrayEquals("this is only a test".getBytes(), payload);
 	}
 
