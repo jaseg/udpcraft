@@ -194,6 +194,7 @@ public class UDPCraftPlugin extends JavaPlugin implements PortalIndex, Signature
 			registerPortal(portal);
 			return true;
 		} catch (Portal.InvalidLocationException ex) {
+			getLogger().log(Level.INFO, "Not creating portal: "+ex.getMessage());
 			return false;
 		}
 	}

@@ -69,12 +69,14 @@ public class Portal {
 			if (clock.millis() - lastUpdate > maxUpdateDelay-updateDelay) {
 				return;
 			} else {
+				logger.info("Delaying queue task "+name);
 				updateTask.cancel();
 			}
 		}
 
 		updateTask = new TimerTask() {
 			public void run() {
+				logger.info("Running queue task "+name);
 				updateTask = null;
 				synchronized(Portal.this) {
 					lastUpdate = clock.millis();
@@ -96,6 +98,7 @@ public class Portal {
 				}
 			}
 		};
+		logger.info("Starting queue timer "+name);
 		timer.schedule(updateTask, updateDelay);
 	}
 	
@@ -193,7 +196,7 @@ public class Portal {
 		direction = config.getOrDefault("direction", config.getOrDefault("dir", "OUT")).equals("OUT") ? Direction.OUT : Direction.IN;
 
 		logger.log(Level.INFO, "Portal accepted. Name: "+config.get("name")+" Direction: "+direction);
-		state.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, true));
+		state.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, name));
 		return (Chest)state;
 	}
 	

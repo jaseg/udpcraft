@@ -46,29 +46,7 @@ public class ChestListener implements Listener {
 					return;
 				}
 				
-				ItemStack stack = evt.getItem();
-				ItemStack contents[] = dest.getContents();
-				int origAmount = stack.getAmount();
-				int toDelete = origAmount;
-				Material sm = stack.getType();
-				for (int i=0; i<contents.length-9; i++) {
-					if (contents[i] != null && contents[i].getType() == sm) {
-						int amount = contents[i].getAmount();
-						if (amount <= toDelete) {
-							toDelete -= amount;
-							contents[i] = null;
-						} else {
-							contents[i].setAmount(amount-toDelete);
-							toDelete = 0;
-							break;
-						}
-					}
-				}
-				stack.setAmount(origAmount - toDelete);
-				dest.setContents(contents);
-				if (origAmount != toDelete)
-					portal.emitItem(stack);
-				evt.setItem(stack);
+				portal.queueUpdate();
 			}
 		}
 	}

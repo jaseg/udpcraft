@@ -25,6 +25,7 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
@@ -120,6 +121,9 @@ public class PortalTest {
 		setUp(null);
 		assertEquals("testportal", portal.getName());
 		assertEquals(null, portal.getPassword());
+		ArgumentCaptor<FixedMetadataValue> nameCap = ArgumentCaptor.forClass(FixedMetadataValue.class);
+		verify(chest, times(1)).setMetadata(eq(Portal.METADATA_KEY), nameCap.capture());
+		assertEquals("testportal", nameCap.getValue().asString());
 	}
 
 	@Test

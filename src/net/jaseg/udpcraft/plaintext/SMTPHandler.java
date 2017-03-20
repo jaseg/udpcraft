@@ -32,7 +32,7 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 	public void handleLine(String line) {
 		synchronized (ch) {
 			try {
-				String [] args = line.split("\\s+");
+				String [] args = line.trim().split(" ");
 				if (args[0].equals("SUBSCRIBE")) {
 					if (args.length == 2)
 						pubsub.subscribe(args[1], null, this);
@@ -45,7 +45,7 @@ public class SMTPHandler implements LineBufferThing.LineHandler, ItemListener {
 					pubsub.unsubscribe(args[1], this);
 				} else if (args[0].equals("SUBMIT")) {
 					if (args.length != 3)
-						throw new IllegalArgumentException("Invalid number of arguments");
+						throw new IllegalArgumentException("Invalid number of arguments "+args.length);
 					try {
 						pubsub.submit(args[1], Base64.decode(args[2]));
 					} catch (Base64DecodingException ex) {
